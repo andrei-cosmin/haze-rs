@@ -1,0 +1,25 @@
+[package]
+name = "haze-macros"
+description = "Procedural macros for haze"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["dioxus", "derive", "injection"]
+categories = ["web-programming", "rust-patterns"]
+readme = "README.md"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0.107"
+quote = "1.0.47"
+syn = { version = "3.0.9", default-features = false, features = ["clone-impls", "derive", "full", "parsing", "printing", "proc-macro"] }
+
+[features]
+standalone = []
+
+[lints]
+workspace = true

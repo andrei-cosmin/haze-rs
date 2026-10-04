@@ -1,0 +1,122 @@
+//! The field kinds a `#[derive(Pack)]` struct accepts.
+
+use proc_macro2::{Span, TokenStream};
+use quote::quote_spanned;
+use syn::{Error, ExprCall, Ident, Path, Token, Type, parse::ParseStream, spanned::Spanned};
+
+use crate::parameter::Parameter;
+
+/// One field of a `#[derive(Pack)]` struct: a resource fetched from the
+/// registry, in the forms a `#[haze::resource]` parameter takes, or a value
+/// computed by a `#[pack(func = ..)]` call, the way summer's `InjectableType`
+/// tells injected fields from `FuncCall` fields.
+pub enum Field<'a> {
+    /// A resource read when the pack is built: `T` waits until `T` exists,
+    /// `Option<T>` is `None` when no `T` exists at that moment, `Later<T>` is
+    /// filled by the end of startup.
+    Fetched(Parameter<'a>),
+    /// `#[pack(func = call(..))]`: the call's result, computed once every other
+    /// field was fetched, with those fields and the `func` fields above it in
+    /// scope.
+    Func(ExprCall),
+}
+
+impl<'a> Field<'a> {
+    /// Classifies a field: a `#[pack(func = ..)]` attribute wins, like summer's
+    /// `#[inject(func = ..)]`; otherwise [`Parameter::of`] classifies the type
+    /// with the pack's own wording, so a field and a `#[haze::resource]`
+    /// parameter accept exactly the same forms.
+    pub fn of(field: &'a syn::Field) -> Result<Self, Error> {
+        let mut call = None;
+        for attribute in &field.attrs {
+            if !attribute.path().is_ident("pack") {
+                continue;
+            }
+            if call.is_some() {
+                return Err(Error::new_spanned(attribute, "duplicate #[pack] attribute"));
+            }
+            call = Some(attribute.parse_args_with(Self::func)?);
+        }
+        if let Some(call) = call {
+            return Ok(Self::Func(call));
+        }
+        Ok(Self::Fetched(Parameter::of(
+            &field.ty,
+            "a #[derive(Pack)] field",
+        )?))
+    }
+
+    /// Whether this field is computed by a `#[pack(func = ..)]` call, so it is
+    /// bound after every other field, like summer's `FuncCall` order.
+    pub fn is_func(&self) -> bool {
+        matches!(self, Self::Func(_))
+    }
+
+    /// Parses `func = call(..)`, the only `#[pack]` argument.
+    fn func(input: ParseStream<'_>) -> Result<ExprCall, Error> {
+        let name = input.parse::<Path>()?;
+        if !name.is_ident("func") {
+            return Err(Error::new_spanned(
+                name,
+                "expected `#[pack(func = call(..))]`",
+            ));
+        }
+        input.parse::<Token![=]>()?;
+        input.parse::<ExprCall>()
+    }
+
+    /// The statement that borrows a fetched field or computes a `func` field
+    /// inside the generated `Pack` impl; `owned` binds a `Later` field.
+    ///
+    /// - It is spanned on the type or the call, so an error points at the
+    ///   field, as in axum-macros' `FromRequest` derive.
+    /// - Registry calls are path calls, as in serde's generated code.
+    /// - The registry parameter is named `__haze_resources`, so a field named
+    ///   `resources` cannot shadow it, the way serde prefixes its locals.
+    /// - That name keeps the derive's call-site span. Spanned on a type from a
+    ///   `macro_rules!` body, it would resolve in that body's hygiene and not
+    ///   be found, which is why serde interpolates `__deserializer` the same
+    ///   way.
+    pub fn binding(&self, name: &Ident, resources: &TokenStream) -> TokenStream {
+        match self {
+            Self::Fetched(Parameter::Required(ty)) => quote_spanned! {ty.span()=>
+                let #name = ::core::option::Option::ok_or_else(
+                    ::haze::Resources::get::<#ty>(#resources),
+                    || ::haze::__private::anyhow::anyhow!(
+                        "{} needs {}, which was never inserted",
+                        ::core::any::type_name::<Self>(),
+                        ::core::any::type_name::<#ty>(),
+                    ),
+                )?;
+            },
+            Self::Fetched(Parameter::Optional(inner)) => quote_spanned! {inner.span()=>
+                let #name = ::haze::Resources::get::<#inner>(#resources);
+            },
+            Self::Fetched(Parameter::Later(_)) => TokenStream::new(),
+            Self::Func(call) => quote_spanned! {call.span()=>
+                let #name = #call;
+            },
+        }
+    }
+
+    pub fn owned(&self, name: &Ident, resources: &TokenStream) -> TokenStream {
+        match self {
+            Self::Fetched(Parameter::Required(ty)) => quote_spanned! {Self::generated_at(ty)=>
+                let #name = ::core::clone::Clone::clone(#name);
+            },
+            Self::Fetched(Parameter::Optional(inner)) => {
+                quote_spanned! {Self::generated_at(inner)=>
+                    let #name = ::core::option::Option::map(#name, ::core::clone::Clone::clone);
+                }
+            }
+            Self::Fetched(Parameter::Later(inner)) => quote_spanned! {inner.span()=>
+                let #name = ::haze::Resources::later::<#inner>(#resources);
+            },
+            Self::Func(_) => TokenStream::new(),
+        }
+    }
+
+    fn generated_at(ty: &Type) -> Span {
+        ty.span().resolved_at(Span::call_site())
+    }
+}

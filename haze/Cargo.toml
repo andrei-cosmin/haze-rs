@@ -1,0 +1,56 @@
+[package]
+name = "haze"
+description = "Small quality-of-life helpers for Dioxus apps, fullstack or standalone: typed resources, injection and reconnecting streams"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "../README.md"
+keywords = ["dioxus", "fullstack", "injection", "resources"]
+categories = ["web-programming", "rust-patterns"]
+
+[features]
+server = [
+    "dioxus/server",
+    "dioxus/cli-config",
+    "dioxus-fullstack/server",
+    "tokio/sync",
+]
+standalone = [
+    "haze-macros/standalone",
+    "dioxus/launch",
+    "tokio/rt-multi-thread",
+    "dep:wasm-bindgen-futures",
+]
+
+[dependencies]
+dioxus = { workspace = true, features = ["hooks", "signals"] }
+dioxus-fullstack = { workspace = true }
+anyhow = { workspace = true }
+inventory = "0.3.25"
+haze-macros = { path = "../haze-macros", version = "=0.8.2" }
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+tokio = { workspace = true, features = ["time"] }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+gloo-timers = { version = "0.4.0", features = ["futures"] }
+js-sys = "0.3.106"
+web-time = "1.1.0"
+dioxus-fullstack = { workspace = true, features = ["web"] }
+wasm-bindgen-futures = { version = "0.4.79", optional = true }
+
+[dev-dependencies]
+dioxus = { workspace = true, features = ["macro", "html", "fullstack"] }
+futures-util = "0.3.34"
+tokio = { workspace = true, features = ["macros", "rt", "sync", "time", "test-util"] }
+tokio-stream = { version = "0.1.19", features = ["sync"] }
+tower = { version = "0.5.3", features = ["util"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[lints]
+workspace = true
