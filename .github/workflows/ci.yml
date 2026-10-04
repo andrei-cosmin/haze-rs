@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo update
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - run: cargo clippy -p haze --all-targets --no-default-features -- -D warnings
+      - run: cargo clippy -p haze --all-targets --features hooks -- -D warnings
+      - run: cargo clippy -p haze --all-targets --features web -- -D warnings
+      - run: cargo clippy -p haze --features server -- -D warnings
+      - run: cargo clippy -p haze --all-targets --features server -- -D warnings
+      - run: cargo clippy -p haze --all-targets --features standalone -- -D warnings
+
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        features: [no-default, all, hooks, web, server, standalone]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo update
+      - if: matrix.features == 'no-default'
+        run: cargo test --workspace --all-targets --no-default-features
+      - if: matrix.features == 'no-default'
+        run: cargo test -p haze --all-targets --no-default-features
+      - if: matrix.features == 'all'
+        run: cargo test --workspace --all-targets --all-features
+      - if: matrix.features != 'no-default' && matrix.features != 'all'
+        run: cargo test -p haze --all-targets --features ${{ matrix.features }}
+      - if: matrix.os == 'macos-latest' && matrix.features == 'standalone'
+        run: cargo build -p haze-examples --example standalone --features standalone,dioxus/desktop
+
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: cargo update
+      - run: cargo build -p haze --lib --target wasm32-unknown-unknown
+      - run: cargo build -p haze --lib --features web --target wasm32-unknown-unknown
+      - run: cargo build -p haze --lib --features standalone --target wasm32-unknown-unknown
+      - run: cargo check -p haze-examples --examples --features web --target wasm32-unknown-unknown
+      - run: cargo check -p haze-examples --example standalone --features standalone,dioxus/web --target wasm32-unknown-unknown
+
+  docs:
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo update
+      - run: cargo doc -p haze -p haze-macros --all-features --no-deps
+      - run: cargo doc -p haze --no-default-features --no-deps
+      - run: cargo test --doc --workspace --all-features

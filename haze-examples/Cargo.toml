@@ -1,0 +1,49 @@
+[package]
+name = "haze-examples"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+dioxus = { workspace = true, features = ["launch", "devtools", "logger", "lib"] }
+haze = { path = "../haze", features = ["hooks"] }
+anyhow = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["time"], optional = true }
+
+[features]
+fullstack = ["dioxus/fullstack"]
+web = ["fullstack", "dioxus/web", "haze/web"]
+server = ["fullstack", "dioxus/server", "haze/server", "dep:tokio", "dep:anyhow"]
+standalone = ["haze/standalone"]
+
+[[example]]
+name = "standalone"
+required-features = ["standalone"]
+
+[[example]]
+name = "counter"
+required-features = ["fullstack"]
+
+[[example]]
+name = "register"
+required-features = ["fullstack"]
+
+[[example]]
+name = "resource"
+required-features = ["fullstack"]
+
+[[example]]
+name = "server_events"
+required-features = ["fullstack"]
+
+[[example]]
+name = "streaming"
+required-features = ["fullstack"]
+
+[[example]]
+name = "websocket"
+required-features = ["fullstack"]
+
+[lints]
+workspace = true
